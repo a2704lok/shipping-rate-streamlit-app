@@ -1,0 +1,13 @@
+streamlit
+pandas
+seaborn
+matplotlib
+pydantic
+docker
+requests
+# Pin versions to avoid meta-tensor + register_pytree_node conflicts
+torch==2.1.2
+transformers==4.41.0
+sentence-transformers==2.7.0
+openai
+numpy>=1.24,<2

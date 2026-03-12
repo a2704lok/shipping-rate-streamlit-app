@@ -1,0 +1,17 @@
+# App-only compose for quick testing (no database)
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - DATA_PATH=data/processed/sample_processed.csv

@@ -1,0 +1,6 @@
+container_type,rate,currency,origin,destination,transit_time_days
+20GP,1250.50,USD,SHA,NYK,25
+40HQ,2100.75,USD,SHA,NYK,28
+20GP,980.00,USD,PVG,LOS,35
+40HQ,1850.25,USD,PVG,LOS,38
+20GP,1450.00,USD,NGB,HOU,30
