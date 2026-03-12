@@ -21,7 +21,7 @@ streamlit run src/app.py
 
 ### Run with Docker
 
-```bash
+
 docker compose -f docker-compose.app.yml up -d
 # Open http://localhost:8501
 ```
@@ -34,3 +34,8 @@ docker compose -f docker-compose.app.yml up -d
 ## License
 
 MIT License. See [LICENSE](LICENSE).
+
+<img width="1470" height="881" alt="RFP column_ norm" src="https://github.com/user-attachments/assets/5fb6226e-63dc-415e-84ed-c1c99b5b8831" />
+
+<img width="1150" height="738" alt="mapping output" src="https://github.com/user-attachments/assets/044c76c1-28fe-4da0-ac1d-9cba5bc2e101" />
+
