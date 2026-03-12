@@ -1,6 +1,6 @@
-"""RFP Column Mapping - Map shipper RFP columns to target schema with confidence scores."""
+"""RFP Column Mapping - Map CSV/Excel columns to target schema with confidence scores."""
 
-import json
+import io
 import os
 import pandas as pd
 import streamlit as st
@@ -37,108 +37,112 @@ with st.sidebar:
 
 st.title("RFP Column Mapping")
 st.markdown(
-    "Map arbitrary shipper RFP column headers to the internal target schema. "
-    "Provide input columns as JSON and receive mapped columns with confidence scores."
+    "Upload a **CSV** or **Excel** file. Column headers are mapped to the internal target schema. "
+    "Download the transformed file with mapped columns."
 )
 
 st.subheader("Target schema")
 st.code(", ".join(TARGET_SCHEMA_FIELDS), language=None)
 st.caption(
     "Mapping uses embeddings first; LLM fallback when confidence < 70%. "
-    "Provide API key in sidebar or set GROQ_API_KEY / OPENAI_API_KEY in .env."
+    "Provide API key in sidebar for LLM fallback."
 )
 
-# Input section
-st.header("Input")
-input_help = """
-Provide your input columns as JSON. Supported formats:
-
-**Option 1 - Array of column names:**
-```json
-["Orig Port", "Destination", "20GP", "40HQ Rate", "ETD", "Transit (days)", "Currency"]
-```
-
-**Option 2 - Object with columns key:**
-```json
-{"columns": ["POL", "POD", "Rate_20", "Rate_40HC", "Departure", "T/T", "Curr"]}
-```
-"""
-with st.expander("Input format help", expanded=False):
-    st.markdown(input_help)
-
-input_json = st.text_area(
-    "Input columns (JSON)",
-    placeholder='["Orig Port", "Destination", "20GP", "40HQ Rate", "ETD", "Transit (days)", "Currency"]',
-    height=120,
+# Input: File upload - shown prominently at top
+st.header("Upload file")
+uploaded_file = st.file_uploader(
+    "Drop your CSV or Excel file here, or click to browse",
+    type=["csv", "xlsx", "xls"],
+    help="Supported: .csv, .xlsx, .xls",
 )
 
-if st.button("Map Columns", type="primary"):
-    if not input_json.strip():
-        st.error("Please enter JSON input.")
-    else:
-        try:
-            parsed = json.loads(input_json)
-            # Handle both array and object formats
-            if isinstance(parsed, list):
-                columns = parsed
-            elif isinstance(parsed, dict) and "columns" in parsed:
-                columns = parsed["columns"]
-            else:
-                st.error("Invalid format. Use an array of column names or {\"columns\": [...]}")
-                st.stop()
+if uploaded_file is not None:
+    try:
+        if uploaded_file.name.lower().endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+            input_format = "csv"
+        else:
+            df = pd.read_excel(uploaded_file)
+            input_format = "xlsx"
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        st.stop()
 
-            # Validate with Pydantic
-            request = ColumnMappingRequest(columns=columns)
+    st.success(f"Loaded **{uploaded_file.name}** — {len(df)} rows, {len(df.columns)} columns")
+    st.write("**Columns:**", ", ".join(df.columns))
+    columns = list(df.columns)
 
-            # Run mapping
-            response: ColumnMappingResponse = map_columns(request)
+    if st.button("Map Columns", type="primary"):
+        if not columns:
+            st.error("No columns found in the file.")
+        else:
+            try:
+                request = ColumnMappingRequest(columns=columns)
+                response: ColumnMappingResponse = map_columns(request)
 
-            st.success("Mapping complete.")
+                st.success("Mapping complete.")
 
-            # Output section
-            st.header("Output")
+                # Build rename dict
+                rename_map = {}
+                for m in response.mappings:
+                    if m.mapped_input_column and m.confidence_score > 0:
+                        rename_map[m.mapped_input_column] = m.target_field
 
-            # Output as JSON
-            output_data = {
-                "mappings": [
-                    {
-                        "target_field": m.target_field,
-                        "mapped_input_column": m.mapped_input_column,
-                        "confidence_score": m.confidence_score,
-                        "source": m.source,
-                        "embedding_confidence": m.embedding_confidence,
-                        "llm_confidence": m.llm_confidence,
+                df_mapped = df.rename(columns=rename_map)
+
+                st.header("Output")
+
+                # Mapping summary with confidence
+                st.subheader("Mapping summary")
+                summary_data = []
+                for m in response.mappings:
+                    row = {
+                        "Target field": m.target_field,
+                        "Mapped from": m.mapped_input_column or "—",
+                        "Confidence": f"{m.confidence_score:.0%}",
+                        "Source": m.source or "—",
                     }
-                    for m in response.mappings
-                ],
-                "unmapped_columns": response.unmapped_columns,
-            }
-            output_json = json.dumps(output_data, indent=2)
+                    if m.embedding_confidence is not None:
+                        row["Embedding"] = f"{m.embedding_confidence:.0%}"
+                    if m.llm_confidence is not None:
+                        row["LLM"] = f"{m.llm_confidence:.0%}"
+                    summary_data.append(row)
+                summary_df = pd.DataFrame(summary_data)
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
-            st.text_area("Mapped output (JSON)", value=output_json, height=400)
+                if response.unmapped_columns:
+                    st.warning(
+                        f"Unmapped columns (kept as-is): {', '.join(response.unmapped_columns)}"
+                    )
 
-            # Summary table
-            st.subheader("Mapping summary")
-            summary_data = []
-            for m in response.mappings:
-                row = {
-                    "Target field": m.target_field,
-                    "Mapped from": m.mapped_input_column or "—",
-                    "Confidence": f"{m.confidence_score:.0%}",
-                    "Source": m.source or "—",
-                }
-                if m.embedding_confidence is not None:
-                    row["Embedding"] = f"{m.embedding_confidence:.0%}"
-                if m.llm_confidence is not None:
-                    row["LLM"] = f"{m.llm_confidence:.0%}"
-                summary_data.append(row)
-            summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                # Download button
+                st.subheader("Download mapped file")
+                if input_format == "csv":
+                    buffer = io.BytesIO()
+                    df_mapped.to_csv(buffer, index=False)
+                    buffer.seek(0)
+                    st.download_button(
+                        label="Download CSV",
+                        data=buffer,
+                        file_name="mapped_output.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    buffer = io.BytesIO()
+                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                        df_mapped.to_excel(writer, index=False, sheet_name="Sheet1")
+                    buffer.seek(0)
+                    st.download_button(
+                        label="Download Excel",
+                        data=buffer,
+                        file_name="mapped_output.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
 
-            if response.unmapped_columns:
-                st.warning(f"Unmapped columns: {', '.join(response.unmapped_columns)}")
+                with st.expander("Preview mapped data"):
+                    st.dataframe(df_mapped.head(20), use_container_width=True)
 
-        except json.JSONDecodeError as e:
-            st.error(f"Invalid JSON: {e}")
-        except ValidationError as e:
-            st.error(f"Validation error: {e}")
+            except ValidationError as e:
+                st.error(f"Validation error: {e}")
+else:
+    st.info("👆 Upload a CSV or Excel file above to get started.")

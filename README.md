@@ -21,7 +21,7 @@ streamlit run src/app.py
 
 ### Run with Docker
 
-
+```bash
 docker compose -f docker-compose.app.yml up -d
 # Open http://localhost:8501
 ```
